@@ -1,0 +1,68 @@
+## flow as designed by unicorn transcoder 
+
+plex client that cannot direct play FILE request transcode from server 
+
+UnicornLB intercepts request and sends to host system of UnicornTranscoder
+
+Unicorn Transcoder repeats request from the initial client and sends to plex server.
+
+Plex Server calls Plex Transcoder; the transcoder has been replaced by UnicornFFMPEG 
+
+Unicorn FFmpeg sends the arguments to Unicorn Loadbalancer 
+
+UnicornLoadBalancer sends request to UnicornTranscoder which then requests arguments from UnicornLoadBalancer 
+
+Unicorn Transcoder then serves the requested stream 
+
+
+## Changes and new flow 
+
+#before going live: create list that contains transcode capabilities of each relevant server (HEVC, h264, 4k 1080p, 24 30-60-120fps?)
+
+
+
+Plex client that cannot direct play FILE request transcode from server 
+
+UnicornLB intercepts request and sends to host system of UnicornTranscoder
+
+Unicorn Transcoder repeats request from the initial client and sends to plex server.
+
+Plex Server calls Plex Transcoder; the transcoder has been replaced by UnicornFFMPEG 
+
+#Change 
+
+Unicorn FFMPEG Sends arguments to custom script. 
+
+Custom script thens send the file to the apropriate system  
+
+Unicorn FFmpeg sends the arguments to Unicorn Loadbalancer 
+
+Custom scrips detects file requirments, and allocates resources based on most appropriate available server
+
+UnicornLoadBalancer sends request to UnicornTranscoder which then requests arguments from UnicornLoadBalancer 
+
+Unicorn Transcoder then serves the requested stream 
+
+##Change 2 
+
+Create 2 Lists of systems: those who can handle HDR (in hardware?) or not (OpenCL?VAAPI?VDPAU?etc.) and those that cannot(VAAPI on AMD_GPU)
+
+
+
+
+Transcoder sends request to 
+
+UnicornFFMPEG capture request 
+
+mediainfo command to detect if HDR/bt.2020 [consider tweaking what we use to detect HDR? other option might be transfer function? best would be to perhaps use peak luminance >=300 nits? should be universal across formats]
+
+If FILE is HDR: //we need to know that the requested server can deal with HDR. RPi cannot as of 2020, jetson *maybe*. most x86_64 systems with a modern GPU should be able to, otherwise CPU 
+	{
+		make sure to pass tonemap arguments to the transcoder
+		//will depend on if HWaccel tonemapping available. Not sure about using OpenCL, VAAPI, VDPAU etc. 
+	}
+else
+	{
+		Send "standard" hw_accel auto arguements to transcoder 
+	}
+  
