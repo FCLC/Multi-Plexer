@@ -1,0 +1,3 @@
+
+##Command for detecting colour primaries of input file 
+mediainfo "FILENAME" --Inform="Video;%colour_primaries%"
