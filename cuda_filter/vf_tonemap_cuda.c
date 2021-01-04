@@ -32,7 +32,7 @@ tonemapping filter.
 This filter will take in a source file that is presumed to be HDR (probably p010) 
 and convert it to an aproximation of the source content within the SDR/ Rec.709 colour space 
 
-Initially this will be done with the linear filter, as it is easier to implement.
+Initially this will be done with the hable filter, as it is easier to implement and relatively simple 
 
 
 Over time I hope to use the BT.2390-8 EOTF, but that is beyond the scope of the initial build

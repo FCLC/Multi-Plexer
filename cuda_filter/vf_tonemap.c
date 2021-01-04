@@ -39,6 +39,24 @@
 #include "internal.h"
 #include "video.h"
 
+//NOTE THIS SHOULD ALWAYS BE CALLED AFTER A SCALE OPERATION TO INCREASE SPEED 
+
+/*
+common functions called from common.h
+
+FFMAX(a,b) ((a) > (b) ? (a) : (b)) 
+for variables a and b, return the larger
+
+FFMAX3(a,b,c) FFMAX(FFMAX(a,b),c)
+for variables a b and c, return the largest
+
+MIX(x,y,a) (x) * (1 - (a)) + (y) * (a)
+MIX(*RGB VALUE, luma, overbright);
+
+
+*/
+
+//different algorithms used in creating a structured variable. See typedef struct tonemapcontext
 enum TonemapAlgorithm {
     TONEMAP_NONE,
     TONEMAP_LINEAR,
@@ -50,6 +68,8 @@ enum TonemapAlgorithm {
     TONEMAP_MAX,
 };
 
+
+//different standards for luma AKA how bright it is. used by the tonemapcontext structure 
 static const struct LumaCoefficients luma_coefficients[AVCOL_SPC_NB] = {
     [AVCOL_SPC_FCC]        = { 0.30,   0.59,   0.11   },
     [AVCOL_SPC_BT470BG]    = { 0.299,  0.587,  0.114  },
@@ -59,6 +79,8 @@ static const struct LumaCoefficients luma_coefficients[AVCOL_SPC_NB] = {
     [AVCOL_SPC_BT2020_NCL] = { 0.2627, 0.6780, 0.0593 },
     [AVCOL_SPC_BT2020_CL]  = { 0.2627, 0.6780, 0.0593 },
 };
+
+
 
 typedef struct TonemapContext {
     const AVClass *class;
@@ -84,7 +106,7 @@ static int query_formats(AVFilterContext *ctx)
 
 static av_cold int init(AVFilterContext *ctx)
 {
-    TonemapContext *s = ctx->priv;
+    TonemapContext *	s = ctx->priv;
 
     switch(s->tonemap) {
     case TONEMAP_GAMMA:
@@ -115,7 +137,7 @@ static float hable(float in)
 
 static float mobius(float in, float j, double peak)
 {
-    float a, b;
+  float a, b;
 
     if (in <= j)
         return in;
@@ -144,6 +166,10 @@ static void tonemap(TonemapContext *s, AVFrame *out, const AVFrame *in,
     *g_out = *g_in;
 
     /* desaturate to prevent unnatural colors */
+
+	//first calculate the average brightness of a pixel
+
+	//then determine if  
     if (s->desat > 0) {
         float luma = s->coeffs->cr * *r_in + s->coeffs->cg * *g_in + s->coeffs->cb * *b_in;
         float overbright = FFMAX(luma - s->desat, 1e-6) / FFMAX(luma, 1e-6);
@@ -152,12 +178,16 @@ static void tonemap(TonemapContext *s, AVFrame *out, const AVFrame *in,
         *b_out = MIX(*b_in, luma, overbright);
     }
 
+
+
     /* pick the brightest component, reducing the value range as necessary
      * to keep the entire signal in range and preventing discoloration due to
      * out-of-bounds clipping */
     sig = FFMAX(FFMAX3(*r_out, *g_out, *b_out), 1e-6);
     sig_orig = sig;
 
+	
+	
     switch(s->tonemap) {
     default:
     case TONEMAP_NONE:
@@ -190,6 +220,9 @@ static void tonemap(TonemapContext *s, AVFrame *out, const AVFrame *in,
     *g_out *= sig / sig_orig;
     *b_out *= sig / sig_orig;
 }
+
+
+//I believe this area can be offloaded to CUDA
 
 static int filter_frame(AVFilterLink *link, AVFrame *in)
 {
@@ -286,6 +319,9 @@ static const AVOption tonemap_options[] = {
     { "peak",         "signal peak override", OFFSET(peak), AV_OPT_TYPE_DOUBLE, {.dbl = 0}, 0, DBL_MAX, FLAGS },
     { NULL }
 };
+
+
+
 
 AVFILTER_DEFINE_CLASS(tonemap);
 

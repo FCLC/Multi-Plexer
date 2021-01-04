@@ -32,7 +32,7 @@ tonemapping filter.
 This filter will take in a source file that is presumed to be HDR (probably p010) 
 and convert it to an aproximation of the source content within the SDR/ Rec.709 colour space 
 
-Initially this will be done with the linear filter, as it is easier to implement. 
+Initially this will be done with the hable filter, as it is easier to implement and relatively simple 
 
 
 Over time I hope to use the BT.2390-8 EOTF, but that is beyond the scope of the initial build 
@@ -49,6 +49,32 @@ Creation of base files
  
 extern "C" {
 
+__global__ void Tonemap_linear(int n, float *x, float *y)
+{
+
+	//this spreads everything into blocks and threads
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+  	//this is the loop that does the work 
+	for (int i = index; i < n; i += stride)
+
+	//this is where we do the math 
+    static float hable(float in)
+{
+    float a = 0.15f, b = 0.50f, c = 0.10f, d = 0.20f, e = 0.02f, f = 0.30f;
+    return (in * (in * a + b * c) + d * e) / (in * (in * a + b) + d * f) - e / f;
+}
+
+}
+
+
+}//last bracket
+
+
+//Everything from the original function is here 
+
+
+/*
 __global__ void Thumbnail_uchar(cudaTextureObject_t uchar_tex,
                                 int *histogram, int src_width, int src_height)
 {
@@ -96,10 +122,6 @@ __global__ void Thumbnail_ushort2(cudaTextureObject_t ushort2_tex,
 
     if (y < src_height && x < src_width)
     {
-        ushort2 pixel = tex2D<ushort2>(ushort2_tex, x, y);
-        atomicAdd(&histogram[(pixel.x + 128) >> 8], 1);
-        atomicAdd(&histogram[256 + ((pixel.y + 128) >> 8)], 1);
-    }
-}
+  
+*/
 
-}
