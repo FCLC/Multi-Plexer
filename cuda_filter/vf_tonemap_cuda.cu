@@ -27,101 +27,110 @@
 
 
 
-/*NOTICE: this is a test build based on the initial works of the NVIDIA Corporation to create an FFMPEG CUDA
+/*NOTICE: this is a test build based on the initial works of the NVIDIA Corporation to create an FF>
 tonemapping filter. 
 This filter will take in a source file that is presumed to be HDR (probably p010) 
 and convert it to an aproximation of the source content within the SDR/ Rec.709 colour space 
 
-Initially this will be done with the hable filter, as it is easier to implement and relatively simple 
+Initially this will be done with the hable filter, as it is easier to implement and relatively simp>
 
 
-Over time I hope to use the BT.2390-8 EOTF, but that is beyond the scope of the initial build 
+Over time I hope to use the BT.2390-8 EOTF, but that is beyond the scope of the initial build
 */
 
 /*
 Changelog
 
-2021/01/03 
-Creation of base files 
+2021/01/03
+Creation of base files
+2021/01/05
+
+start from scratch- other approach seems silly 
+
 
 */
 
- 
-extern "C" {
 
-__global__ void Tonemap_linear(int n, float *x, float *y)
+//This is the cuda side. it handles all of the math.
+
+// let's start simple and work from the classic sum 2 arrays example and addapt it
+
+//this funtion exists as it's on program/file. it handles everything when called upon by the relavant c file.
+
+
+#include <iostream>
+#include <math.h>
+// Kernel function to add the elements of two arrays
+
+
+__global__
+void add(float pix, int x, int y )// what do we need? we need a pointer to an array, call it source, and we need 2 integers, the width and the height
 {
 
-	//this spreads everything into blocks and threads
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-  	//this is the loop that does the work 
+		// pix is a 2d array of width x and height y. therefore, to work on a given pixel, we adress it first by it's collum, then by it's row. 
+
+		//to optimize this, we'll spin the threads into blocks of {[ceiling] x/32} width, which then get spun off into threads for each block. This can be optimized down the line
+
+
+	/*
+	this is the bit I need to wrap my head around, need to figure out how to translate it
+
+	int index = blockIdx.x * blockDim.x + threadIdx.x;
+	int stride = blockDim.x * gridDim.x;
+
+	*/
+
+
+	//hable coefficients
+	float a = 0.15f, b = 0.50f, c = 0.10f, d = 0.20f, e = 0.02f, f = 0.30f;
+		// might be better not to have them be variables, can remove redundant lookups or memory allocations
 	for (int i = index; i < n; i += stride)
-
-	//this is where we do the math 
-    static float hable(float in)
-{
-    float a = 0.15f, b = 0.50f, c = 0.10f, d = 0.20f, e = 0.02f, f = 0.30f;
-    return (in * (in * a + b * c) + d * e) / (in * (in * a + b) + d * f) - e / f;
-}
-
+   	// here we modify and write back the value of the pixel
+	 pix
 }
 
 
-}//last bracket
 
 
-//Everything from the original function is here 
 
 
-/*
-__global__ void Thumbnail_uchar(cudaTextureObject_t uchar_tex,
-                                int *histogram, int src_width, int src_height)
+
+
+
+
+
+
+
+int main(void) // for now it's a main, but it will be converted to a standard call right after.
 {
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (y < src_height && x < src_width)
-    {
-        unsigned char pixel = tex2D<unsigned char>(uchar_tex, x, y);
-        atomicAdd(&histogram[pixel], 1);
-    }
-}
+  int N = 1<<20;
+  float *x, *y;
 
-__global__ void Thumbnail_uchar2(cudaTextureObject_t uchar2_tex,
-                                 int *histogram, int src_width, int src_height)
-{
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
+  // Allocate Unified Memory – accessible from CPU or GPU
+  cudaMallocManaged(&x, N*sizeof(float));
+  cudaMallocManaged(&y, N*sizeof(float));
 
-    if (y < src_height && x < src_width)
-    {
-        uchar2 pixel = tex2D<uchar2>(uchar2_tex, x, y);
-        atomicAdd(&histogram[pixel.x], 1);
-        atomicAdd(&histogram[256 + pixel.y], 1);
-    }
-}
+  // initialize x and y arrays on the host
+  for (int i = 0; i < N; i++) {
+    x[i] = 1.0f;
+    y[i] = 2.0f;
+  }
 
-__global__ void Thumbnail_ushort(cudaTextureObject_t ushort_tex,
-                                 int *histogram, int src_width, int src_height)
-{
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
+  // Run kernel on 1M elements on the GPU
+  add<<<1, 1>>>(N, x, y);
 
-    if (y < src_height && x < src_width)
-    {
-        unsigned short pixel = (tex2D<unsigned short>(ushort_tex, x, y) + 128) >> 8;
-        atomicAdd(&histogram[pixel], 1);
-    }
-}
+  // Wait for GPU to finish before accessing on host
+  cudaDeviceSynchronize();
 
-__global__ void Thumbnail_ushort2(cudaTextureObject_t ushort2_tex,
-                                  int *histogram, int src_width, int src_height)
-{
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
+  // Check for errors (all values should be 3.0f)
+  float maxError = 0.0f;
+  for (int i = 0; i < N; i++)
+    maxError = fmax(maxError, fabs(y[i]-3.0f));
+  std::cout << "Max error: " << maxError << std::endl;
 
-    if (y < src_height && x < src_width)
-    {
+  // Free memory
+  cudaFree(x);
+  cudaFree(y);
   
-*/
-
+  return 0;
+}
