@@ -1,11 +1,6 @@
 /*
-* Copyright (c) 2021 Felix LeClair 
+* Copyright (c) 2017, NVIDIA CORPORATION. All rights reserved.
 *
-*[I don't know if this is correct for a copyright notice, please correct me if wrong]
-*
-* Derived in part by the work of Nvidia in 2017 on the vf_thumbnail_cuda filter 
-*
-* 
 * Permission is hereby granted, free of charge, to any person obtaining a
 * copy of this software and associated documentation files (the "Software"),
 * to deal in the Software without restriction, including without limitation
@@ -25,28 +20,6 @@
 * DEALINGS IN THE SOFTWARE.
 */
 
-
-
-/*NOTICE: this is a test build based on the initial works of the NVIDIA Corporation to create an FFMPEG CUDA
-tonemapping filter. 
-This filter will take in a source file that is presumed to be HDR (probably p010) 
-and convert it to an aproximation of the source content within the SDR/ Rec.709 colour space 
-
-Initially this will be done with the hable filter, as it is easier to implement and relatively simple 
-
-
-Over time I hope to use the BT.2390-8 EOTF, but that is beyond the scope of the initial build
-*/
-
-/*
-Changelog
-
-2021/01/03
-Creation of base files
-
-
-
-*/
 #include "libavutil/hwcontext.h"
 #include "libavutil/hwcontext_cuda_internal.h"
 #include "libavutil/cuda_check.h"
@@ -58,23 +31,18 @@ Creation of base files
 
 #define CHECK_CU(x) FF_CUDA_CHECK_DL(ctx, s->hwctx->internal->cuda_dl, x)
 
-
-//might have to change this, since 256 is 8 bit and we need 10 bit for HDR inputs. if this is only relevant for 8 bit, we're fine 
- 
 #define HIST_SIZE (3*256)
 #define DIV_UP(a, b) ( ((a) + (b) - 1) / (b) )
 #define BLOCKX 32
-#define BLOCKY 16 //not sure what these do yet
+#define BLOCKY 16
 
-
-//supported formats currently only p010
 static const enum AVPixelFormat supported_formats[] = {
-   // AV_PIX_FMT_NV12,
-   // AV_PIX_FMT_YUV420P,
-   // AV_PIX_FMT_YUV444P,
+    AV_PIX_FMT_NV12,
+    AV_PIX_FMT_YUV420P,
+    AV_PIX_FMT_YUV444P,
     AV_PIX_FMT_P010,
-   // AV_PIX_FMT_P016,
-   // AV_PIX_FMT_YUV444P16,
+    AV_PIX_FMT_P016,
+    AV_PIX_FMT_YUV444P16,
 };
 
 struct thumb_frame {
@@ -232,7 +200,7 @@ static int thumbnail(AVFilterContext *ctx, int *histogram, AVFrame *in)
     ThumbnailCudaContext *s = ctx->priv;
 
     switch (in_frames_ctx->sw_format) {
-/*  case AV_PIX_FMT_NV12:
+    case AV_PIX_FMT_NV12:
         thumbnail_kernel(ctx, s->cu_func_uchar, 1,
             histogram, in->data[0], in->width, in->height, in->linesize[0], 1);
         thumbnail_kernel(ctx, s->cu_func_uchar2, 2,
@@ -254,12 +222,8 @@ static int thumbnail(AVFilterContext *ctx, int *histogram, AVFrame *in)
         thumbnail_kernel(ctx, s->cu_func_uchar, 1,
             histogram + 512, in->data[2], in->width, in->height, in->linesize[2], 1);
         break;
-*/   
-
-	case AV_PIX_FMT_P010LE:
-
-
-/*    case AV_PIX_FMT_P016LE:
+    case AV_PIX_FMT_P010LE:
+    case AV_PIX_FMT_P016LE:
         thumbnail_kernel(ctx, s->cu_func_ushort, 1,
             histogram, in->data[0], in->width, in->height, in->linesize[0], 2);
         thumbnail_kernel(ctx, s->cu_func_ushort2, 2,
@@ -273,8 +237,7 @@ static int thumbnail(AVFilterContext *ctx, int *histogram, AVFrame *in)
         thumbnail_kernel(ctx, s->cu_func_ushort2, 1,
             histogram + 512, in->data[2], in->width, in->height, in->linesize[2], 2);
         break;
-  */
-	default:
+    default:
         return AVERROR_BUG;
     }
 
@@ -316,7 +279,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     ret = CHECK_CU(cu->cuMemcpy2DAsync(&cpy, s->cu_stream));
     if (ret < 0)
         return ret;
-	//don't have to remove this pixel format check since, for formats different from p010le, these are all OR statements 
+
     if (hw_frames_ctx->sw_format == AV_PIX_FMT_NV12 || hw_frames_ctx->sw_format == AV_PIX_FMT_YUV420P ||
         hw_frames_ctx->sw_format == AV_PIX_FMT_P010LE || hw_frames_ctx->sw_format == AV_PIX_FMT_P016LE)
     {
@@ -407,7 +370,7 @@ static int config_props(AVFilterLink *inlink)
     ret = CHECK_CU(cu->cuModuleLoadData(&s->cu_module, vf_thumbnail_cuda_ptx));
     if (ret < 0)
         return ret;
-	// declairs the 4 funtions that get called in the cuda file 
+
     ret = CHECK_CU(cu->cuModuleGetFunction(&s->cu_func_uchar, s->cu_module, "Thumbnail_uchar"));
     if (ret < 0)
         return ret;
