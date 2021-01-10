@@ -1,4 +1,4 @@
-# Jetson_ffmpeg_trancode_cluster
+# Jetson_ffmpeg_transcode_cluster
 
  This project aims to bring together a few things together. 
 
