@@ -3,7 +3,8 @@
 *
 *[I don't know if this is correct for a copyright notice, please correct me if wrong]
 *
-* Derived in part by the work of Nvidia in 2017 on the vf_thumbnail_cuda filter 
+* Derived in part by the work of Nvidia in 2017 on the vf_thumbnail_cuda filter and on the work of Yaroslav Pogrebnyak <yyyaroslav@gmail.com> on the vf_overlay_cuda filter
+
 *
 * 
 * Permission is hereby granted, free of charge, to any person obtaining a
