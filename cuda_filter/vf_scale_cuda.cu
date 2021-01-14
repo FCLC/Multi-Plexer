@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2017, NVIDIA CORPORATION. All rights reserved.
+ * original source Copyright (c) 2017, NVIDIA CORPORATION. All rights reserved.
+ *
+ * Change to tonemap style filter copyright Felix LeClair 
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -20,192 +22,74 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+/*
+
+Warning: this is a VERY early alpha of a cuda accelerated filter to tonemap. Please see ffmpeg devel mailing list for message of title [vf_tonemap_cuda] VERY alpha ground work- implemented as cuda frame
+sent on the 14th of January 2021 
+It's poorly written and documented. this should not be merged under any circumstance in it's present form.
+
+
+*/
+
+
+#include "cuda/vector_helpers.cuh"
+
+template<typename T>
+__device__ inline void Subsample_Nearest(cudaTextureObject_t tex,
+                                         T *dst,
+                                         int dst_width, int dst_height, int dst_pitch,
+                                         int src_width, int src_height,
+                                         int bit_depth)
+/*
+tex is the cuda texture
+T is a pointer to the destination frame
+dst_width is the width of the output frame
+dst_height is the height of the output frame 
+dst_pitch is the I DON'T KNOW YET, but I suspect this has to do when changing the size of pixels when shifting aspect ratios.
+	 as such I'm going to redifine as 1 so I don't have any issues 
+bit_depth  is the amount of bits per colour channel
+*/
+
+{
+	
+	dst_pitch =1;// this is a bodge, but won't be needed when I change the rest of the source to not need to deal with the legacy scalling source code.
+    int xo = blockIdx.x * blockDim.x + threadIdx.x;
+    int yo = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (yo < dst_height && xo < dst_width)
+    {
+        float hscale = (float)src_width / (float)dst_width;// supposed to be the scalling factor in the original funtion, but I'm going to ignore it
+        float vscale = (float)src_height / (float)dst_height; // as above, going to ignore it
+        float xi = (xo + 0.5f); // * hscale;
+        float yi = (yo + 0.5f); // * vscale;
+	float val_IN = tex2D<T>(tex, xi, yi);// to start I'm doing reinhard because it's idiot proof
+	float out = val_IN*(val_IN/(val_IN + 1.0f)); // this scales the incoming pixel by a factor of x/(x+1). this guarentees a value between 0 and 1. far from the best algortihm, but is fit for purpose 
+	dst[yo*dst_pitch+xo] =out; // this is where I'm transforming the value to the tonemapped value.  
+    }
+}
+
+
 extern "C" {
 
-__global__ void Subsample_Bilinear_uchar(cudaTextureObject_t uchar_tex,
-                                    unsigned char *dst,
-                                    int dst_width, int dst_height, int dst_pitch,
-                                    int src_width, int src_height)
-{
-    int xo = blockIdx.x * blockDim.x + threadIdx.x;
-    int yo = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (yo < dst_height && xo < dst_width)
-    {
-        float hscale = (float)src_width / (float)dst_width;
-        float vscale = (float)src_height / (float)dst_height;
-        float xi = (xo + 0.5f) * hscale;
-        float yi = (yo + 0.5f) * vscale;
-        // 3-tap filter weights are {wh,1.0,wh} and {wv,1.0,wv}
-        float wh = min(max(0.5f * (hscale - 1.0f), 0.0f), 1.0f);
-        float wv = min(max(0.5f * (vscale - 1.0f), 0.0f), 1.0f);
-        // Convert weights to two bilinear weights -> {wh,1.0,wh} -> {wh,0.5,0} + {0,0.5,wh}
-        float dx = wh / (0.5f + wh);
-        float dy = wv / (0.5f + wv);
-        int y0 = tex2D<unsigned char>(uchar_tex, xi-dx, yi-dy);
-        int y1 = tex2D<unsigned char>(uchar_tex, xi+dx, yi-dy);
-        int y2 = tex2D<unsigned char>(uchar_tex, xi-dx, yi+dy);
-        int y3 = tex2D<unsigned char>(uchar_tex, xi+dx, yi+dy);
-        dst[yo*dst_pitch+xo] = (unsigned char)((y0+y1+y2+y3+2) >> 2);
+#define NEAREST_KERNEL(T) \
+    __global__ void Subsample_Nearest_ ## T(cudaTextureObject_t src_tex,                  \
+                                            T *dst,                                       \
+                                            int dst_width, int dst_height, int dst_pitch, \
+                                            int src_width, int src_height,                \
+                                            int bit_depth)                                \
+    {                                                                                     \
+	//call the device side  code under __device__ inline void Subsample_Nearest
+        Subsample_Nearest<T>(src_tex, dst,                                                \
+                              dst_width, dst_height, dst_pitch,                           \
+                              src_width, src_height,                                      \
+                              bit_depth);                                                 \
     }
-}
 
-__global__ void Subsample_Bilinear_uchar2(cudaTextureObject_t uchar2_tex,
-                                    uchar2 *dst,
-                                    int dst_width, int dst_height, int dst_pitch2,
-                                    int src_width, int src_height)
-{
-    int xo = blockIdx.x * blockDim.x + threadIdx.x;
-    int yo = blockIdx.y * blockDim.y + threadIdx.y;
+NEAREST_KERNEL(uchar)
+NEAREST_KERNEL(uchar2)
+NEAREST_KERNEL(uchar4)
 
-    if (yo < dst_height && xo < dst_width)
-    {
-        float hscale = (float)src_width / (float)dst_width;
-        float vscale = (float)src_height / (float)dst_height;
-        float xi = (xo + 0.5f) * hscale;
-        float yi = (yo + 0.5f) * vscale;
-        // 3-tap filter weights are {wh,1.0,wh} and {wv,1.0,wv}
-        float wh = min(max(0.5f * (hscale - 1.0f), 0.0f), 1.0f);
-        float wv = min(max(0.5f * (vscale - 1.0f), 0.0f), 1.0f);
-        // Convert weights to two bilinear weights -> {wh,1.0,wh} -> {wh,0.5,0} + {0,0.5,wh}
-        float dx = wh / (0.5f + wh);
-        float dy = wv / (0.5f + wv);
-        uchar2 c0 = tex2D<uchar2>(uchar2_tex, xi-dx, yi-dy);
-        uchar2 c1 = tex2D<uchar2>(uchar2_tex, xi+dx, yi-dy);
-        uchar2 c2 = tex2D<uchar2>(uchar2_tex, xi-dx, yi+dy);
-        uchar2 c3 = tex2D<uchar2>(uchar2_tex, xi+dx, yi+dy);
-        int2 uv;
-        uv.x = ((int)c0.x+(int)c1.x+(int)c2.x+(int)c3.x+2) >> 2;
-        uv.y = ((int)c0.y+(int)c1.y+(int)c2.y+(int)c3.y+2) >> 2;
-        dst[yo*dst_pitch2+xo] = make_uchar2((unsigned char)uv.x, (unsigned char)uv.y);
-    }
-}
-
-__global__ void Subsample_Bilinear_uchar4(cudaTextureObject_t uchar4_tex,
-                                    uchar4 *dst,
-                                    int dst_width, int dst_height, int dst_pitch,
-                                    int src_width, int src_height)
-{
-    int xo = blockIdx.x * blockDim.x + threadIdx.x;
-    int yo = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (yo < dst_height && xo < dst_width)
-    {
-        float hscale = (float)src_width / (float)dst_width;
-        float vscale = (float)src_height / (float)dst_height;
-        float xi = (xo + 0.5f) * hscale;
-        float yi = (yo + 0.5f) * vscale;
-        // 3-tap filter weights are {wh,1.0,wh} and {wv,1.0,wv}
-        float wh = min(max(0.5f * (hscale - 1.0f), 0.0f), 1.0f);
-        float wv = min(max(0.5f * (vscale - 1.0f), 0.0f), 1.0f);
-        // Convert weights to two bilinear weights -> {wh,1.0,wh} -> {wh,0.5,0} + {0,0.5,wh}
-        float dx = wh / (0.5f + wh);
-        float dy = wv / (0.5f + wv);
-        uchar4 c0 = tex2D<uchar4>(uchar4_tex, xi-dx, yi-dy);
-        uchar4 c1 = tex2D<uchar4>(uchar4_tex, xi+dx, yi-dy);
-        uchar4 c2 = tex2D<uchar4>(uchar4_tex, xi-dx, yi+dy);
-        uchar4 c3 = tex2D<uchar4>(uchar4_tex, xi+dx, yi+dy);
-        int4 res;
-        res.x =  ((int)c0.x+(int)c1.x+(int)c2.x+(int)c3.x+2) >> 2;
-        res.y =  ((int)c0.y+(int)c1.y+(int)c2.y+(int)c3.y+2) >> 2;
-        res.z =  ((int)c0.z+(int)c1.z+(int)c2.z+(int)c3.z+2) >> 2;
-        res.w =  ((int)c0.w+(int)c1.w+(int)c2.w+(int)c3.w+2) >> 2;
-        dst[yo*dst_pitch+xo] = make_uchar4(
-            (unsigned char)res.x, (unsigned char)res.y, (unsigned char)res.z, (unsigned char)res.w);
-    }
-}
-
-__global__ void Subsample_Bilinear_ushort(cudaTextureObject_t ushort_tex,
-                                    unsigned short *dst,
-                                    int dst_width, int dst_height, int dst_pitch,
-                                    int src_width, int src_height)
-{
-    int xo = blockIdx.x * blockDim.x + threadIdx.x;
-    int yo = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (yo < dst_height && xo < dst_width)
-    {
-        float hscale = (float)src_width / (float)dst_width;
-        float vscale = (float)src_height / (float)dst_height;
-        float xi = (xo + 0.5f) * hscale;
-        float yi = (yo + 0.5f) * vscale;
-        // 3-tap filter weights are {wh,1.0,wh} and {wv,1.0,wv}
-        float wh = min(max(0.5f * (hscale - 1.0f), 0.0f), 1.0f);
-        float wv = min(max(0.5f * (vscale - 1.0f), 0.0f), 1.0f);
-        // Convert weights to two bilinear weights -> {wh,1.0,wh} -> {wh,0.5,0} + {0,0.5,wh}
-        float dx = wh / (0.5f + wh);
-        float dy = wv / (0.5f + wv);
-        int y0 = tex2D<unsigned short>(ushort_tex, xi-dx, yi-dy);
-        int y1 = tex2D<unsigned short>(ushort_tex, xi+dx, yi-dy);
-        int y2 = tex2D<unsigned short>(ushort_tex, xi-dx, yi+dy);
-        int y3 = tex2D<unsigned short>(ushort_tex, xi+dx, yi+dy);
-        dst[yo*dst_pitch+xo] = (unsigned short)((y0+y1+y2+y3+2) >> 2);
-    }
-}
-
-__global__ void Subsample_Bilinear_ushort2(cudaTextureObject_t ushort2_tex,
-                                    ushort2 *dst,
-                                    int dst_width, int dst_height, int dst_pitch2,
-                                    int src_width, int src_height)
-{
-    int xo = blockIdx.x * blockDim.x + threadIdx.x;
-    int yo = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (yo < dst_height && xo < dst_width)
-    {
-        float hscale = (float)src_width / (float)dst_width;
-        float vscale = (float)src_height / (float)dst_height;
-        float xi = (xo + 0.5f) * hscale;
-        float yi = (yo + 0.5f) * vscale;
-        // 3-tap filter weights are {wh,1.0,wh} and {wv,1.0,wv}
-        float wh = min(max(0.5f * (hscale - 1.0f), 0.0f), 1.0f);
-        float wv = min(max(0.5f * (vscale - 1.0f), 0.0f), 1.0f);
-        // Convert weights to two bilinear weights -> {wh,1.0,wh} -> {wh,0.5,0} + {0,0.5,wh}
-        float dx = wh / (0.5f + wh);
-        float dy = wv / (0.5f + wv);
-        ushort2 c0 = tex2D<ushort2>(ushort2_tex, xi-dx, yi-dy);
-        ushort2 c1 = tex2D<ushort2>(ushort2_tex, xi+dx, yi-dy);
-        ushort2 c2 = tex2D<ushort2>(ushort2_tex, xi-dx, yi+dy);
-        ushort2 c3 = tex2D<ushort2>(ushort2_tex, xi+dx, yi+dy);
-        int2 uv;
-        uv.x = ((int)c0.x+(int)c1.x+(int)c2.x+(int)c3.x+2) >> 2;
-        uv.y = ((int)c0.y+(int)c1.y+(int)c2.y+(int)c3.y+2) >> 2;
-        dst[yo*dst_pitch2+xo] = make_ushort2((unsigned short)uv.x, (unsigned short)uv.y);
-    }
-}
-
-__global__ void Subsample_Bilinear_ushort4(cudaTextureObject_t ushort4_tex,
-                                    ushort4 *dst,
-                                    int dst_width, int dst_height, int dst_pitch,
-                                    int src_width, int src_height)
-{
-    int xo = blockIdx.x * blockDim.x + threadIdx.x;
-    int yo = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (yo < dst_height && xo < dst_width)
-    {
-        float hscale = (float)src_width / (float)dst_width;
-        float vscale = (float)src_height / (float)dst_height;
-        float xi = (xo + 0.5f) * hscale;
-        float yi = (yo + 0.5f) * vscale;
-        // 3-tap filter weights are {wh,1.0,wh} and {wv,1.0,wv}
-        float wh = min(max(0.5f * (hscale - 1.0f), 0.0f), 1.0f);
-        float wv = min(max(0.5f * (vscale - 1.0f), 0.0f), 1.0f);
-        // Convert weights to two bilinear weights -> {wh,1.0,wh} -> {wh,0.5,0} + {0,0.5,wh}
-        float dx = wh / (0.5f + wh);
-        float dy = wv / (0.5f + wv);
-        ushort4 c0 = tex2D<ushort4>(ushort4_tex, xi-dx, yi-dy);
-        ushort4 c1 = tex2D<ushort4>(ushort4_tex, xi+dx, yi-dy);
-        ushort4 c2 = tex2D<ushort4>(ushort4_tex, xi-dx, yi+dy);
-        ushort4 c3 = tex2D<ushort4>(ushort4_tex, xi+dx, yi+dy);
-        int4 res;
-        res.x =  ((int)c0.x+(int)c1.x+(int)c2.x+(int)c3.x+2) >> 2;
-        res.y =  ((int)c0.y+(int)c1.y+(int)c2.y+(int)c3.y+2) >> 2;
-        res.z =  ((int)c0.z+(int)c1.z+(int)c2.z+(int)c3.z+2) >> 2;
-        res.w =  ((int)c0.w+(int)c1.w+(int)c2.w+(int)c3.w+2) >> 2;
-        dst[yo*dst_pitch+xo] = make_ushort4(
-            (unsigned short)res.x, (unsigned short)res.y, (unsigned short)res.z, (unsigned short)res.w);
-    }
-}
-
+NEAREST_KERNEL(ushort)
+NEAREST_KERNEL(ushort2)
+NEAREST_KERNEL(ushort4)
 }
