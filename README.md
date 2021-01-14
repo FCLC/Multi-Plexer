@@ -24,3 +24,8 @@ As of now the most optimal way to achieve what we want is to decode in hardware,
 OpenCL is not currently supported, and the Nvidia package of FFmpeg does not support encoding. Therefore, the plan is to take advantage of the POCL translation interface to use openCL filters running on cuda. In adition to this, there is a community plugin that allows for both encoding and decoding through a common interface
      
     
+## Current Work in progress
+
+cuda based tonemapping filter: changed /cuda_filter/vf_scale_cuda as a workaround to perform tonemapping using reinhard 
+
+see ffmpeg-devel mailing list for more. 
