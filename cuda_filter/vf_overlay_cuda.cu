@@ -24,10 +24,12 @@ __global__ void Overlay_Cuda(int x_position, int y_position, unsigned char* main
 {
 		
 	
-
+		//typical block and stride 
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
+
+		//make sure we dont overflow:
     if (x >= overlay_w + x_position ||
         y >= overlay_h + y_position ||
         x < x_position ||
@@ -42,9 +44,15 @@ __global__ void Overlay_Cuda(int x_position, int y_position, unsigned char* main
     float alpha = 1.0;
     if (alpha_linesize) {
         alpha = overlay_alpha[alpha_adj_x * overlay_x  + alpha_adj_y * overlay_y * alpha_linesize] / 255.0f;
-   			 } if statement close 
+   			 }// if statement close 
 
-    main[x + y*main_linesize] = alpha * overlay[overlay_x + overlay_y * overlay_linesize] + (1.0f - alpha) * main[x + y*main_linesize];
+//my change to perform reinhart 
+	float tone = main[x + y*main_linesize];
+	tone = tone* (tone /(tone+1));
+	
+
+
+    main[x + y*main_linesize] = tone;
 }// cuda funtion
 
 }//whole funtion
