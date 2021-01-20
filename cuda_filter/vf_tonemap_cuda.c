@@ -1,50 +1,174 @@
 /*
-* Copyright (c) 2021 Felix LeClair 
-*
-*[I don't know if this is correct for a copyright notice, please correct me if wrong]
-*
-* Derived in part by the work of Nvidia in 2017 on the vf_thumbnail_cuda filter 
-*
-* 
-* Permission is hereby granted, free of charge, to any person obtaining a
-* copy of this software and associated documentation files (the "Software"),
-* to deal in the Software without restriction, including without limitation
-* the rights to use, copy, modify, merge, publish, distribute, sublicense,
-* and/or sell copies of the Software, and to permit persons to whom the
-* Software is furnished to do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in
-* all copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-* THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-* DEALINGS IN THE SOFTWARE.
-*/
+ * Copyright (c) 2021 Felix LeClair <felix.leclair123@hotmail.com>
+ *
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * FFmpeg is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with FFmpeg; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+/**
+ * @file
+ * tonemap a given video using a given tone curve via cuda hardware acceleration
+ */
+
+#include "libavutil/log.h"
+#include "libavutil/mem.h"
+#include "libavutil/opt.h"
+#include "libavutil/pixdesc.h"
+#include "libavutil/hwcontext.h"
+#include "libavutil/hwcontext_cuda_internal.h"
+#include "libavutil/cuda_check.h"
+
+#include "avfilter.h"
+#include "framesync.h"
+#include "internal.h"
+
+#define CHECK_CU(x) FF_CUDA_CHECK_DL(ctx, ctx->hwctx->internal->cuda_dl, x)
+#define DIV_UP(a, b) ( ((a) + (b) - 1) / (b) )
+
+#define BLOCK_X 32
+#define BLOCK_Y 16
+
+static const enum AVPixelFormat supported_main_formats[] = {
+    AV_PIX_FMT_NV12,
+    AV_PIX_FMT_YUV420P,
+    AV_PIX_FMT_NONE,
+};
+
 
 /*
-Changelog
+ * tonemapCUDAContext
+ */
+typedef struct tonemapCUDAContext {
+    const AVClass      *class;
 
-2021/01/03
-Creation of base files
-2021/01/05
-start from scratch- other approach seems silly 
-2021/01/05
-RTFM and just get my shit together 
+    enum AVPixelFormat in_format_main;
 
-This is the C side.
-All this file needs to do is:
-Negotiate the filter 
-get the frame 
-get the information about the frame
-pass the frame and information to the cuda side
-receive the frame back 
-send it on in the chain 
-*/
+    AVCUDADeviceContext *hwctx;
 
+    CUcontext cu_ctx;
+    CUmodule cu_module;
+    CUfunction cu_func;
+    CUstream cu_stream;
+
+    FFFrameSync fs;
+
+    int x_position;
+    int y_position;
+
+} tonemapCUDAContext;
+
+/*
+ * Helper to find out if provided format is supported by filter
+ */
+static int format_is_supported(const enum AVPixelFormat formats[], enum AVPixelFormat fmt)
+{
+    for (int i = 0; formats[i] != AV_PIX_FMT_NONE; i++)
+        if (formats[i] == fmt)
+            return 1;
+    return 0;
+}
+
+/**
+ * Call tonemaping kernell
+ */
+static int tonemap_cuda_call_kernel(
+    tonemapCUDAContext *ctx,
+    int x_position, int y_position,
+    uint8_t* main_data, int main_linesize,
+    int main_width, int main_height) {
+
+    CudaFunctions *cu = ctx->hwctx->internal->cuda_dl;
+
+    void* kernel_args[] = {
+        &x_position, &y_position,
+        &main_data, &main_linesize,
+       };
+
+    return CHECK_CU(cu->cuLaunchKernel(
+        ctx->cu_func,
+        DIV_UP(main_width, BLOCK_X), DIV_UP(main_height, BLOCK_Y), 1,
+        BLOCK_X, BLOCK_Y, 1,
+        0, ctx->cu_stream, kernel_args, NULL));
+}
+
+/**
+ * tonemap the darn thing
+ */
+static int tonemap_cuda_blend(FFFrameSync *fs)
+{
+    int ret;
+
+    AVFilterContext *avctx = fs->parent;
+    tonemapCUDAContext *ctx = avctx->priv;
+    AVFilterLink *outlink = avctx->outputs[0];
+
+    CudaFunctions *cu = ctx->hwctx->internal->cuda_dl;
+    CUcontext dummy, cuda_ctx = ctx->hwctx->cuda_ctx;
+
+    AVFrame *input_main;
+
+    ctx->cu_ctx = cuda_ctx;
+
+    // push cuda context
+
+    ret = CHECK_CU(cu->cuCtxPushCurrent(cuda_ctx));
+    if (ret < 0) {
+        av_frame_free(&input_main);
+        return ret;
+    }
+
+    // first plane
+
+    tonemap_cuda_call_kernel(ctx,
+        ctx->x_position, ctx->y_position,
+        input_main->data[0], input_main->linesize[0],
+        input_main->width, input_main->height,);
+
+    //  depending on pixel format
+
+    switch(ctx->in_format_tonemap) {
+    case AV_PIX_FMT_NV12:
+        tonemap_cuda_call_kernel(ctx,
+            ctx->x_position, ctx->y_position / 2,
+            input_main->data[1], input_main->linesize[1],
+            input_main->width, input_main->height / 2,);
+        break;
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVA420P:
+        tonemap_cuda_call_kernel(ctx,
+            ctx->x_position / 2 , ctx->y_position / 2,
+            input_main->data[1], input_main->linesize[1],
+            input_main->width / 2, input_main->height / 2);
+
+        tonemap_cuda_call_kernel(ctx,
+            ctx->x_position / 2 , ctx->y_position / 2,
+            input_main->data[2], input_main->linesize[2],
+            input_main->width / 2, input_main->height / 2);
+        break;
+    default:
+        av_log(ctx, AV_LOG_ERROR, "Passed unsupported pixel format\n");
+        av_frame_free(&input_main);
+        CHECK_CU(cu->cuCtxPopCurrent(&dummy));
+        return AVERROR_BUG;
+    }
+
+    CHECK_CU(cu->cuCtxPopCurrent(&dummy));
+
+    return ff_filter_frame(outlink, input_main);
+}
 
 /**
  * Initialize tonemap_cuda
@@ -75,7 +199,19 @@ static av_cold void tonemap_cuda_uninit(AVFilterContext *avctx)
     }
 }
 
-//query_formats() goes here 
+/**
+ * Activate tonemap_cuda
+ */
+static int tonemap_cuda_activate(AVFilterContext *avctx)
+{
+    tonemapCUDAContext *ctx = avctx->priv;
+
+    return ff_framesync_activate(&ctx->fs);
+}
+
+/**
+ * Query formats
+ */
 static int tonemap_cuda_query_formats(AVFilterContext *avctx)
 {
     static const enum AVPixelFormat pixel_formats[] = {
@@ -87,9 +223,9 @@ static int tonemap_cuda_query_formats(AVFilterContext *avctx)
     return ff_set_common_formats(avctx, pix_fmts);
 }
 
-
-
-//Config_props() goes here 
+/**
+ * Configure output
+ */
 static int tonemap_cuda_config_output(AVFilterLink *outlink)
 {
 
@@ -108,10 +244,10 @@ static int tonemap_cuda_config_output(AVFilterLink *outlink)
     CUcontext dummy, cuda_ctx;
     CudaFunctions *cu;
 
-    // check main input formats
+    // check input format
 
     if (!frames_ctx) {
-        av_log(ctx, AV_LOG_ERROR, "No hw context provided on main input\n");
+        av_log(ctx, AV_LOG_ERROR, "No hw context provided on input, (did you remember to specify cuda?) \n");
         return AVERROR(EINVAL);
     }
 
@@ -122,28 +258,7 @@ static int tonemap_cuda_config_output(AVFilterLink *outlink)
         return AVERROR(ENOSYS);
     }
 
-    // check tonemap input formats
-
-    if (!frames_ctx_tonemap) {
-        av_log(ctx, AV_LOG_ERROR, "No hw context provided on tonemap input\n");
-        return AVERROR(EINVAL);
-    }
-
-    ctx->in_format_tonemap = frames_ctx_tonemap->sw_format;
-    if (!format_is_supported(supported_tonemap_formats, ctx->in_format_tonemap)) {
-        av_log(ctx, AV_LOG_ERROR, "Unsupported tonemap input format: %s\n",
-            av_get_pix_fmt_name(ctx->in_format_tonemap));
-        return AVERROR(ENOSYS);
-    }
-
-    // check we can tonemap pictures with those pixel formats
-
-    if (!formats_match(ctx->in_format_main, ctx->in_format_tonemap)) {
-        av_log(ctx, AV_LOG_ERROR, "Can't tonemap %s on %s \n",
-            av_get_pix_fmt_name(ctx->in_format_tonemap), av_get_pix_fmt_name(ctx->in_format_main));
-        return AVERROR(EINVAL);
-    }
- // initialize
+    // initialize the hardware context 
 
     ctx->hwctx = frames_ctx->device_ctx->hwctx;
     cuda_ctx = ctx->hwctx->cuda_ctx;
@@ -186,124 +301,38 @@ static int tonemap_cuda_config_output(AVFilterLink *outlink)
     return ff_framesync_configure(&ctx->fs);
 }
 
-//filer_frame() goes here 
+
+static const AVOption tonemap_cuda_options[] = {
+	//describes the options the filter provides. in this case we'll have hable, reinhart and clip(aka clamp)
 
 
-
-
-
-
-
-/*NOTICE: this is a test build based on the initial works of the NVIDIA Corporation to create an FF>
-tonemapping filter. 
-This filter will take in a source file that is presumed to be HDR (probably p010) 
-and convert it to an aproximation of the source content within the SDR/ Rec.709 colour space 
-
-Initially this will be done with the hable filter, as it is easier to implement and relatively simp>
-
-
-Over time I hope to use the BT.2390-8 EOTF, but that is beyond the scope of the initial build
-*/
-
-
-
-
-
-#include "libavutil/log.h"
-#include "libavutil/mem.h"
-#include "libavutil/opt.h"
-#include "libavutil/pixdesc.h"
-#include "libavutil/hwcontext.h"
-#include "libavutil/hwcontext_cuda_internal.h"
-#include "libavutil/cuda_check.h"
-
-#include "avfilter.h"
-#include "framesync.h"
-#include "internal.h"
-
-#define CHECK_CU(x) FF_CUDA_CHECK_DL(ctx, ctx->hwctx->internal->cuda_dl, x)
-#define DIV_UP(a, b) ( ((a) + (b) - 1) / (b) )
-
-#define BLOCK_X 32
-#define BLOCK_Y 16
-
-static const enum AVPixelFormat supported_main_formats[] = {
-    AV_PIX_FMT_NV12,
-    AV_PIX_FMT_YUV420P,
-    AV_PIX_FMT_NONE,
+ /*{ "x", "Overlay x position",
+      OFFSET(x_position), AV_OPT_TYPE_INT, { .i64 = 0 }, INT_MIN, INT_MAX, .flags = FLAGS },
+    { "y", "Overlay y position",
+      OFFSET(y_position), AV_OPT_TYPE_INT, { .i64 = 0 }, INT_MIN, INT_MAX, .flags = FLAGS },
+    { "eof_action", "Action to take when encountering EOF from secondary input ",
+        OFFSET(fs.opt_eof_action), AV_OPT_TYPE_INT, { .i64 = EOF_ACTION_REPEAT },
+        EOF_ACTION_REPEAT, EOF_ACTION_PASS, .flags = FLAGS, "eof_action" },
+        { "repeat", "Repeat the previous frame.",   0, AV_OPT_TYPE_CONST, { .i64 = EOF_ACTION_REPEAT }, .flags = FLAGS, "eof_action" },
+        { "endall", "End both streams.",            0, AV_OPT_TYPE_CONST, { .i64 = EOF_ACTION_ENDALL }, .flags = FLAGS, "eof_action" },
+        { "pass",   "Pass through the main input.", 0, AV_OPT_TYPE_CONST, { .i64 = EOF_ACTION_PASS },   .flags = FLAGS, "eof_action" },
+    { "shortest", "force termination when the shortest input terminates", OFFSET(fs.opt_shortest), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "repeatlast", "repeat overlay of the last overlay frame", OFFSET(fs.opt_repeatlast), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, FLAGS },
+    { NULL },*/
 };
 
-static const enum AVPixelFormat supported_tonemap_formats[] = {
-    AV_PIX_FMT_NV12,
-    AV_PIX_FMT_YUV420P,
-    AV_PIX_FMT_YUVA420P,
-    AV_PIX_FMT_NONE,
-};
-
-/**
- * tonemapCUDAContext
- */
-typedef struct tonemapCUDAContext {
-    const AVClass      *class;
-
-    enum AVPixelFormat in_format_tonemap;
-    enum AVPixelFormat in_format_main;
-
-    AVCUDADeviceContext *hwctx;
-
-    CUcontext cu_ctx;
-    CUmodule cu_module;
-    CUfunction cu_func;
-    CUstream cu_stream;
-
-    FFFrameSync fs;
-
-    int x_position;
-    int y_position;
-
-} tonemapCUDAContext;
-
-/**
- * Helper to find out if provided format is supported by filter
- */
-static int format_is_supported(const enum AVPixelFormat formats[], enum AVPixelFormat fmt)
-{
-    for (int i = 0; formats[i] != AV_PIX_FMT_NONE; i++)
-            return 1;
-    return 0;
-}
-
-/**
- * Helper checks if we can process main and tonemap pixel formats
- */
-static int formats_match(const enum AVPixelFormat format_main, const enum AVPixelFormat format_tonemap) {
-    switch(format_main) {
-    case AV_PIX_FMT_NV12:
-        return format_tonemap == AV_PIX_FMT_NV12;
-    case AV_PIX_FMT_YUV420P:
-        return format_tonemap == AV_PIX_FMT_YUV420P ||
-               format_tonemap == AV_PIX_FMT_YUVA420P;
-    default:
-        return 0;
-    }
-}
-
-
-
-
-
-
-
-
-//Standard ffmpegs options for documentation
-
-
+FRAMESYNC_DEFINE_CLASS(tonemap_cuda, tonemapCUDAContext, fs);
 
 static const AVFilterPad tonemap_cuda_inputs[] = {
     {
         .name         = "main",
         .type         = AVMEDIA_TYPE_VIDEO,
     },
+   /* {
+        .name         = "overlay",
+        .type         = AVMEDIA_TYPE_VIDEO,
+    },*/
+    { NULL }
 };
 
 static const AVFilterPad tonemap_cuda_outputs[] = {
@@ -317,7 +346,7 @@ static const AVFilterPad tonemap_cuda_outputs[] = {
 
 AVFilter ff_vf_tonemap_cuda = {
     .name            = "tonemap_cuda",
-    .description     = NULL_IF_CONFIG_SMALL("tonemap video using CUDA"),
+    .description     = NULL_IF_CONFIG_SMALL("Tonemap a given video using a given tone curve via CUDA"),
     .priv_size       = sizeof(tonemapCUDAContext),
     .priv_class      = &tonemap_cuda_class,
     .init            = &tonemap_cuda_init,

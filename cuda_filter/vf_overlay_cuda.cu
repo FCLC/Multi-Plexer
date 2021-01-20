@@ -41,10 +41,12 @@ __global__ void Overlay_Cuda(int x_position, int y_position, unsigned char* main
     int overlay_x = x - x_position;
     int overlay_y = y - y_position;
 
-    float alpha = 1.0;
+   /* float alpha = 1.0;
     if (alpha_linesize) {
         alpha = overlay_alpha[alpha_adj_x * overlay_x  + alpha_adj_y * overlay_y * alpha_linesize] / 255.0f;
-   			 }// if statement close 
+   */			 }
+
+	// if statement close 
 
 //my change to perform reinhart 
 	float tone = main[x + y*main_linesize];
