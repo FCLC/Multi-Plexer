@@ -18,22 +18,22 @@ implement platform agnostic hardware accelerated transcoding for ffmpeg
  
  ### Software: 
  1. Host 
-  a. OS for server- debian based 
-  b. Unicorn Transcoder or Kuber Plex 
-  c. NFS share (Data itself is accessed over the network on my nas, ZFS and so on)
-  d. Custom capture scrip to modify arguments sent from PMS to transcoder 
-  e. Plex Media Server
-  f. Load balancer  
+  1. OS for server- debian based 
+  2. Unicorn Transcoder or Kuber Plex 
+  3. NFS share (Data itself is accessed over the network on my nas, ZFS and so on)
+  4. Custom capture scrip to modify arguments sent from PMS to transcoder 
+  5. Plex Media Server
+  6. Load balancer  
  
  2. Jetson (aka transcoder node)
-  a. Jetpack (4.3?)
-  b. client side of UT or KP from 1.b
-  c. custom ffmpeg build
-   i. Personal cuda patch (should upstream to newest branch once I'm done) for tonemapping. currently reihard, but will change to eotf 2390 eventually
-   ii. Jcover90 ffmpeg patch to enable the use of the transcode blocks 
-   iii. nvidia build of ffmpeg to enable decoding and vf_scale_cuda
-  d. client side of load balancer from 1.f
-  e. (things I forgot will go here)
+  1. Jetpack (4.3?)
+  2. client side of UT or KP from 1.b
+  3. custom ffmpeg build
+   1. Personal cuda patch (should upstream to newest branch once I'm done) for tonemapping. currently reihard, but will change to eotf 2390 eventually
+   2. Jcover90 ffmpeg patch to enable the use of the transcode blocks 
+   3. nvidia build of ffmpeg to enable decoding and vf_scale_cuda
+  4. client side of load balancer from 1.f
+  5. (things I forgot will go here)
   
 ## How do I plan to architect this?
 
