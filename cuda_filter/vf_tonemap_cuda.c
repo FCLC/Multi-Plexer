@@ -1,4 +1,4 @@
-/*
+ /*
  * Copyright (c) 2021 Felix LeClair <felix.leclair123@hotmail.com>
  *
  * This file is part of FFmpeg.
@@ -54,7 +54,7 @@ static const enum AVPixelFormat supported_main_formats[] = {
 typedef struct tonemapCUDAContext {
     const AVClass      *class;
 
-    enum AVPixelFormat in_format_main;
+    enum AVPixelFormat in_format_tonemap;
 
     AVCUDADeviceContext *hwctx;
 
@@ -132,10 +132,7 @@ static int tonemap_cuda_blend(FFFrameSync *fs)
 
     // first plane
 
-    tonemap_cuda_call_kernel(ctx,
-        ctx->x_position, ctx->y_position,
-        input_main->data[0], input_main->linesize[0],
-        input_main->width, input_main->height,);
+    tonemap_cuda_call_kernel(ctx, ctx->x_position, ctx->y_position, input_main->data[0], input_main->linesize[0], input_main->width, input_main->height);
 
     //  depending on pixel format
 
@@ -144,7 +141,7 @@ static int tonemap_cuda_blend(FFFrameSync *fs)
         tonemap_cuda_call_kernel(ctx,
             ctx->x_position, ctx->y_position / 2,
             input_main->data[1], input_main->linesize[1],
-            input_main->width, input_main->height / 2,);
+            input_main->width, input_main->height / 2);
         break;
     case AV_PIX_FMT_YUV420P:
     case AV_PIX_FMT_YUVA420P:
@@ -229,7 +226,7 @@ static int tonemap_cuda_query_formats(AVFilterContext *avctx)
 static int tonemap_cuda_config_output(AVFilterLink *outlink)
 {
 
-    extern char vf_tonemap_cuda_ptx[];
+  //  extern char vf_tonemap_cuda_ptx[];
 
     int err;
     AVFilterContext* avctx = outlink->src;
@@ -251,10 +248,10 @@ static int tonemap_cuda_config_output(AVFilterLink *outlink)
         return AVERROR(EINVAL);
     }
 
-    ctx->in_format_main = frames_ctx->sw_format;
-    if (!format_is_supported(supported_main_formats, ctx->in_format_main)) {
+    ctx->in_format_tonemap = frames_ctx->sw_format;
+    if (!format_is_supported(supported_main_formats, ctx->in_format_tonemap)) {
         av_log(ctx, AV_LOG_ERROR, "Unsupported main input format: %s\n",
-               av_get_pix_fmt_name(ctx->in_format_main));
+               av_get_pix_fmt_name(ctx->in_format_tonemap));
         return AVERROR(ENOSYS);
     }
 
@@ -276,13 +273,13 @@ static int tonemap_cuda_config_output(AVFilterLink *outlink)
     if (err < 0) {
         return err;
     }
-
+/*
     err = CHECK_CU(cu->cuModuleLoadData(&ctx->cu_module, vf_tonemap_cuda_ptx));
     if (err < 0) {
         CHECK_CU(cu->cuCtxPopCurrent(&dummy));
         return err;
     }
-
+*/
     err = CHECK_CU(cu->cuModuleGetFunction(&ctx->cu_func, ctx->cu_module, "tonemap_Cuda"));
     if (err < 0) {
         CHECK_CU(cu->cuCtxPopCurrent(&dummy));
