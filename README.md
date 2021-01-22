@@ -47,8 +47,10 @@ Jetson NANO does not currently have a great FFMPEG implementation for what I nee
 
 As of now the most optimal way to achieve what we want is to decode in hardware, use cuda to resize and tonemap if needed, then encode the file while sending back to the host.      
     
-## Current Work in progress
+## Current State of different parts
 
-cuda based tonemapping filter: changed /cuda_filter/vf_scale_cuda as a workaround to perform tonemapping using reinhard 
+cuda based tonemapping filter: Pretty much done. Need to confirm performance (Don't have a jetson yet, test on old gtx670 as POC). GTX670 has 2gb of ram, so If I can simulate only having 768mb of vram, should be worse case scenario as POC
 
-see ffmpeg-devel mailing list for more. 
+Capture Script to modify arguments to HW counterparts: Haven't begun developing; have spoken with UT devs about where to capture arguments. it's node JS, so will have to learn that
+
+Test "cost" of pulling data across network, and optane on Jetson.  
