@@ -21,27 +21,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-/*
-Doxy:
-
-TLDR; tonemap a given video using a given tone curve via CUDA hardware acceleration
-
-The primary purpose of tonemapping has to do with how HDR (High Dynamic Range) video content is distributed.
-In essence, HDR content does not hard-code the real colour values of it's pixels. Instead it provides a linear
-map of colours with very little natural contrast. Metadata is then used to transform the content to appear as
-the creator intended, regardless of the capabilities of the users display. This allows for content to be consistent
-across a diverse set of installations and provide a known minimum level of quality. Unfortunately, when transcoding
-content, this metadata can rarely be used in the new file. As such the output tends to be extremely dim
-and desaturated. This is reminiscent of LOG footage in digital cinema footage at time of capture.
-
-As such, as part of the chain, when using HDR source and transcoding to SDR (Standard Dynamic Range) a tone curve
-needs to be applied to mimic the effect that the metadata would have done when sent to the display. Opinions and
-standards differ on the best approach for tonemapping content. As such this filter will include multiple options.
-
-further reading on different standards and their approximate implementations in c++ can be found
-at: https://web.archive.org/web/20201101024948/https://64.github.io/tonemapping/
- */
-
 #include "libavutil/log.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
