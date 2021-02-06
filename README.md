@@ -49,8 +49,10 @@ As of now the most optimal way to achieve what we want is to decode in hardware,
     
 ## Current State of different parts
 
-cuda based tonemapping filter: Pretty much done. Need to confirm performance (Don't have a jetson yet, test on old gtx670 as POC). GTX670 has 2gb of ram, so If I can simulate only having 768mb of vram, should be worse case scenario as POC
+cuda based tonemapping filter: Pretty much done. Need to confirm performance but so far so good. Unfortunately CUDA_frames aren't supported. So will have to use a propriatary filter. Thinking vf_scale_jetson and vf_tonemap_jetson for naiming convention. 
 
-Capture Script to modify arguments to HW counterparts: Haven't begun developing; have spoken with UT devs about where to capture arguments. it's node JS, so will have to learn that
+Capture Script to modify arguments to HW counterparts: Working well, but haven't done enough edge case testing.
 
-Test "cost" of pulling data across network, and optane on Jetson.  
+Test "cost" of pulling data across network, and optane on Jetson. Results are great! Reading and writing to/from networked VM network share over NFS on gigabit had a margin of error variance. all local was varience of ~2%, changing to networked produced identical results. 
+
+10 bit/HDR decoding: potential roadblock is that the Nvidia documentation contradicts itself on the topic of 10 bit decoding support. It seems that Gstreamer does support 10 bit by truncating it down to 8 bit; that isnt an issue but will require more in depth testing. In the case where I can't get the decoder to work, Cuda based decoding may be an option. This has the added benifit of taking everything away from the CPU, so I can guarentee more ram to the GPU/encoding blocks.   
