@@ -37,15 +37,13 @@ implement platform agnostic hardware accelerated transcoding for ffmpeg
   
 ## How do I plan to architect this?
 
-As of now (dec 2020) the intention is to handle the different aspects using these projects:
+Plan is a 1u to 2u unit(s?) system, probably acrilic box. The system would present an eithernet jack and a power cord. the interior of the device would either have an integrated POE switch or would have an integrated battery bank (would require a AC/DC stepdown to 5v?)  
 
-The distribution of work load via the Unicorn transcoder project [link goes here]
+The distribution of work load via the Unicorn transcoder project [link goes here] or DockerPlex. both achieve the same thing, but the Docker swarm component could be useful for managing nodes
 
-Transcoding of content handled via ffmpeg [link to website here]
+Transcoding of content handled via ffmpeg, but customized/stripped down for only the core/needed components. 
 
-Jetson NANO does not currently have a great FFMPEG implementation for what I need. need to patch in 
-
-As of now the most optimal way to achieve what we want is to decode in hardware, use cuda to resize and tonemap if needed, then encode the file while sending back to the host.      
+As of now the most optimal way to achieve what we want is to decode in hardware, use cuda to resize and tonemap if needed, then encode the file while sending back to the host. It seems that the NVDEC block doesnt fully support 10 bit content, so may have to use cuda in the case of 10 bit HDR. Isnt really an issue since I'll be moving data to gpu afterwards anyway, and the jetson keeps all decoded/encoded data in GPU memory.
     
 ## Current State of different parts
 
