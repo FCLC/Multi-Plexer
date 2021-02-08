@@ -8,6 +8,9 @@ learn aarch64 (AKA 64 bit arm)
 learn about clustering 
 implement platform agnostic hardware accelerated transcoding for ffmpeg
 
+I've also been tracking some ups and downs on the Level1Techs forum in this thread! https://forum.level1techs.com/t/building-a-10-100w-distributed-arm-based-transcode-cluster-i-missed-devember-jobless-january-floundering-february/167831/40
+
+
 ## Components 
 
 ### Hardware:
@@ -15,6 +18,10 @@ implement platform agnostic hardware accelerated transcoding for ffmpeg
  1. Host server (either dedicated or worskstation PC)
  2. Networking switch (poe?)
  3. Multiple Nvidia Jetson's (ideally NX (agx is the dream)) but probably 2gb nano's or, depending on launch dates of Nvidia roadmap, Jetson Nano Next or Jetson Orin 
+
+Other potential option: 
+
+Turing Machines are launching a V2 of their Turring Pi cluster board, and it will have 4 260 pin slot's, initially deisgned for the Rpi CM4. I've reached out to their questions email adress asking about potential support, but have yet to hear back. Would alow for any mix of Nano (2 GB or 4GB) and Xavier NX + any other Jetson SOM that Nvidia may release. 
  
  ### Software: 
  1. Host 
@@ -27,12 +34,12 @@ implement platform agnostic hardware accelerated transcoding for ffmpeg
  
  2. Jetson (aka transcoder node)
   1. Jetpack (4.3?)
-  2. client side of UT or KP from 1.b
+  2. client side of UT or KP from 1.2.
   3. custom ffmpeg build
-   1. Personal cuda patch (should upstream to newest branch once I'm done) for tonemapping. currently reihard, but will change to eotf 2390 eventually
+   1. Personal cuda patch (should upstream to newest branch once I'm done) for tonemapping. Currently Reinhard and Hable, but will change to eotf BT.2390 Soon TM
    2. Jcover90 ffmpeg patch to enable the use of the transcode blocks 
-   3. nvidia build of ffmpeg to enable decoding and vf_scale_cuda
-  4. client side of load balancer from 1.f
+   3. Nvidia build of ffmpeg to enable decoding and vf_scale_cuda
+  4. Client side of load balancer from 1.6.
   5. (things I forgot will go here)
   
 ## How do I plan to architect this?
