@@ -43,21 +43,25 @@ Turing Machines are launching a V2 of their Turring Pi cluster board, and it wil
   5. (things I forgot will go here)
   
 ## How do I plan to architect this?
-
-Plan is a 1u to 2u unit(s?) system, probably acrilic box. The system would present an eithernet jack and a power cord. the interior of the device would either have an integrated POE switch or would have an integrated battery bank (would require a AC/DC stepdown to 5v?)  
-
-The distribution of work load via the Unicorn transcoder project [link goes here] or DockerPlex. both achieve the same thing, but the Docker swarm component could be useful for managing nodes
-
-Transcoding of content handled via ffmpeg, but customized/stripped down for only the core/needed components. 
-
-As of now the most optimal way to achieve what we want is to decode in hardware, use cuda to resize and tonemap if needed, then encode the file while sending back to the host. It seems that the NVDEC block doesnt fully support 10 bit content, so may have to use cuda in the case of 10 bit HDR. Isnt really an issue since I'll be moving data to gpu afterwards anyway, and the jetson keeps all decoded/encoded data in GPU memory.
     
-## Current State of different parts
 
-cuda based tonemapping filter: Pretty much done. Need to confirm performance but so far so good. Unfortunately CUDA_frames aren't supported. So will have to use a propriatary filter. Thinking vf_scale_jetson and vf_tonemap_jetson for naiming convention. 
 
-Capture Script to modify arguments to HW counterparts: Working well, but haven't done enough edge case testing.
+## Update August 2021
 
-Test "cost" of pulling data across network, and optane on Jetson. Results are great! Reading and writing to/from networked VM network share over NFS on gigabit had a margin of error variance. all local was varience of ~2%, changing to networked produced identical results. 
+Been busy and burned out of late with other projects, and hoping to come pack to this one enventually. here's a layout for what needs to be done in a clear outline that isnt overwelming and can be takled in small bites.
 
-10 bit/HDR decoding: potential roadblock is that the Nvidia documentation contradicts itself on the topic of 10 bit decoding support. It seems that Gstreamer does support 10 bit by truncating it down to 8 bit; that isnt an issue but will require more in depth testing. In the case where I can't get the decoder to work, Cuda based decoding may be an option. This has the added benifit of taking everything away from the CPU, so I can guarentee more ram to the GPU/encoding blocks.   
+Step 1: have ffmpeg tonemap using a filter 
+
+Step 2: compile plex with custom filter built in 
+
+step 3: have local plex call custom filter 
+
+step 4: have local plex call external plex, without custom filtering 
+
+step 5: have local plex call external plex, with custom filtering 
+
+step 6: have local plex turn off unneeded nodes and turn them back on as needed. 
+
+step 7: integration testing 
+
+step 8: Enjoy power saving 
